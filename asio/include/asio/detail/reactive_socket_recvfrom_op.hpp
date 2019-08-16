@@ -32,12 +32,11 @@ template <typename MutableBufferSequence, typename Endpoint>
 class reactive_socket_recvfrom_op_base : public reactor_op
 {
 public:
-  reactive_socket_recvfrom_op_base(socket_type socket, int protocol_type,
+  reactive_socket_recvfrom_op_base(socket_type socket,
       const MutableBufferSequence& buffers, Endpoint& endpoint,
       socket_base::message_flags flags, func_type complete_func)
     : reactor_op(&reactive_socket_recvfrom_op_base::do_perform, complete_func),
       socket_(socket),
-      protocol_type_(protocol_type),
       buffers_(buffers),
       sender_endpoint_(endpoint),
       flags_(flags)
@@ -69,7 +68,6 @@ public:
 
 private:
   socket_type socket_;
-  int protocol_type_;
   MutableBufferSequence buffers_;
   Endpoint& sender_endpoint_;
   socket_base::message_flags flags_;
@@ -83,12 +81,12 @@ class reactive_socket_recvfrom_op :
 public:
   ASIO_DEFINE_HANDLER_PTR(reactive_socket_recvfrom_op);
 
-  reactive_socket_recvfrom_op(socket_type socket, int protocol_type,
+  reactive_socket_recvfrom_op(socket_type socket,
       const MutableBufferSequence& buffers, Endpoint& endpoint,
       socket_base::message_flags flags, Handler& handler,
       const IoExecutor& io_ex)
     : reactive_socket_recvfrom_op_base<MutableBufferSequence, Endpoint>(
-        socket, protocol_type, buffers, endpoint, flags,
+        socket, buffers, endpoint, flags,
         &reactive_socket_recvfrom_op::do_complete),
       handler_(ASIO_MOVE_CAST(Handler)(handler)),
       io_executor_(io_ex)
