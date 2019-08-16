@@ -75,6 +75,22 @@
 # define ASIO_DECL
 #endif // !defined(ASIO_DECL)
 
+#if defined(__has_cpp_attribute)
+# if __has_cpp_attribute(deprecated)
+#  define ASIO_DECL_DEPRECATED(msg) [[deprecated(msg)]]
+# endif // __has_cpp_attribute(deprecated)
+#endif // defined(__has_cpp_attribute)
+
+#if !defined(ASIO_DECL_DEPRECATED)
+# if defined(__GNUC__) || defined(__clang__)
+#  define ASIO_DECL_DEPRECATED(msg) __attribute__((deprecated(msg)))
+# elif defined(_MSC_VER)
+#  define ASIO_DECL_DEPRECATED(msg) __declspec(deprecated(msg))
+# else
+#  define ASIO_DECL_DEPRECATED(msg)
+# endif
+#endif // !defined(ASIO_DECL_DEPRECATED)
+
 // Microsoft Visual C++ detection.
 #if !defined(ASIO_MSVC)
 # if defined(ASIO_HAS_BOOST_CONFIG) && defined(BOOST_MSVC)

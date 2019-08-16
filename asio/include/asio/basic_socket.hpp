@@ -552,9 +552,9 @@ public:
    */
 #if defined(ASIO_MSVC) && (ASIO_MSVC >= 1400) \
   && (!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0603)
-  __declspec(deprecated("This function always fails with "
+  ASIO_DECL_DEPRECATED("This function always fails with "
         "operation_not_supported when used on Windows versions "
-        "prior to Windows 8.1."))
+        "prior to Windows 8.1.")
 #endif
   native_handle_type release()
   {
@@ -580,9 +580,9 @@ public:
    */
 #if defined(ASIO_MSVC) && (ASIO_MSVC >= 1400) \
   && (!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0603)
-  __declspec(deprecated("This function always fails with "
+  ASIO_DECL_DEPRECATED("This function always fails with "
         "operation_not_supported when used on Windows versions "
-        "prior to Windows 8.1."))
+        "prior to Windows 8.1.")
 #endif
   native_handle_type release(asio::error_code& ec)
   {
@@ -637,9 +637,9 @@ public:
 #if defined(ASIO_MSVC) && (ASIO_MSVC >= 1400) \
   && (!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600) \
   && !defined(ASIO_ENABLE_CANCELIO)
-  __declspec(deprecated("By default, this function always fails with "
+  ASIO_DECL_DEPRECATED("By default, this function always fails with "
         "operation_not_supported when used on Windows XP, Windows Server 2003, "
-        "or earlier. Consult documentation for details."))
+        "or earlier. Consult documentation for details.")
 #endif
   void cancel()
   {
@@ -685,9 +685,9 @@ public:
 #if defined(ASIO_MSVC) && (ASIO_MSVC >= 1400) \
   && (!defined(_WIN32_WINNT) || _WIN32_WINNT < 0x0600) \
   && !defined(ASIO_ENABLE_CANCELIO)
-  __declspec(deprecated("By default, this function always fails with "
+  ASIO_DECL_DEPRECATED("By default, this function always fails with "
         "operation_not_supported when used on Windows XP, Windows Server 2003, "
-        "or earlier. Consult documentation for details."))
+        "or earlier. Consult documentation for details.")
 #endif
   ASIO_SYNC_OP_VOID cancel(asio::error_code& ec)
   {
