@@ -1,15 +1,16 @@
 //
-// detail/reactive_descriptor_service.hpp
+// detail/linux_io_uring_descriptor_service.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
 // Copyright (c) 2003-2019 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2019 George Shramov (goxash at gmail dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#ifndef ASIO_DETAIL_REACTIVE_DESCRIPTOR_SERVICE_HPP
-#define ASIO_DETAIL_REACTIVE_DESCRIPTOR_SERVICE_HPP
+#ifndef ASIO_DETAIL_LINUX_IO_URING_DESCRIPTOR_SERVICE_HPP
+#define ASIO_DETAIL_LINUX_IO_URING_DESCRIPTOR_SERVICE_HPP
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
 # pragma once
@@ -17,24 +18,21 @@
 
 #include "asio/detail/config.hpp"
 
-#if !defined(ASIO_WINDOWS) \
-  && !defined(ASIO_HAS_IO_URING) \
-  && !defined(ASIO_WINDOWS_RUNTIME) \
-  && !defined(__CYGWIN__)
+#if defined(ASIO_HAS_IO_URING)
 
 #include "asio/buffer.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/detail/bind_handler.hpp"
 #include "asio/detail/buffer_sequence_adapter.hpp"
-#include "asio/detail/descriptor_ops.hpp"
 #include "asio/detail/fenced_block.hpp"
+#include "asio/detail/linux_io_uring_manager.hpp"
+#include "asio/detail/linux_io_uring_null_buffers_op.hpp"
+#include "asio/detail/linux_io_uring_read_op.hpp"
+#include "asio/detail/linux_io_uring_wait_op.hpp"
+#include "asio/detail/linux_io_uring_write_op.hpp"
 #include "asio/detail/memory.hpp"
 #include "asio/detail/noncopyable.hpp"
-#include "asio/detail/reactive_descriptor_read_op.hpp"
-#include "asio/detail/reactive_descriptor_write_op.hpp"
-#include "asio/detail/reactive_null_buffers_op.hpp"
-#include "asio/detail/reactive_wait_op.hpp"
-#include "asio/detail/reactor.hpp"
+#include "asio/detail/descriptor_ops.hpp"
 #include "asio/posix/descriptor_base.hpp"
 
 #include "asio/detail/push_options.hpp"
@@ -42,8 +40,8 @@
 namespace asio {
 namespace detail {
 
-class reactive_descriptor_service :
-  public execution_context_service_base<reactive_descriptor_service>
+class linux_io_uring_descriptor_service :
+  public execution_context_service_base<linux_io_uring_descriptor_service>
 {
 public:
   // The native type of a descriptor.
@@ -63,20 +61,17 @@ public:
 
   private:
     // Only this service will have access to the internal values.
-    friend class reactive_descriptor_service;
+    friend class linux_io_uring_descriptor_service;
 
     // The native descriptor representation.
     int descriptor_;
 
     // The current state of the descriptor.
     descriptor_ops::state_type state_;
-
-    // Per-descriptor data used by the reactor.
-    reactor::per_descriptor_data reactor_data_;
   };
 
   // Constructor.
-  ASIO_DECL reactive_descriptor_service(execution_context& context);
+  ASIO_DECL linux_io_uring_descriptor_service(execution_context& context);
 
   // Destroy all user-defined handler objects owned by the service.
   ASIO_DECL void shutdown();
@@ -90,7 +85,7 @@ public:
 
   // Move-assign from another descriptor implementation.
   ASIO_DECL void move_assign(implementation_type& impl,
-      reactive_descriptor_service& other_service,
+      linux_io_uring_descriptor_service& other_service,
       implementation_type& other_impl);
 
   // Destroy a descriptor implementation.
@@ -198,35 +193,39 @@ public:
     bool is_continuation =
       asio_handler_cont_helpers::is_continuation(handler);
 
-    // Allocate and construct an operation to wrap the handler.
-    typedef reactive_wait_op<Handler, IoExecutor> op;
-    typename op::ptr p = { asio::detail::addressof(handler),
-      op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
-
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
-          &impl, impl.descriptor_, "async_wait"));
-
-    int op_type;
+    short poll_events;
     switch (w)
     {
     case posix::descriptor_base::wait_read:
-        op_type = reactor::read_op;
-        break;
+      poll_events = EPOLLIN;
+      break;
     case posix::descriptor_base::wait_write:
-        op_type = reactor::write_op;
-        break;
+      poll_events = EPOLLOUT;
+      break;
     case posix::descriptor_base::wait_error:
-        op_type = reactor::except_op;
-        break;
-      default:
-        p.p->ec_ = asio::error::invalid_argument;
-        reactor_.post_immediate_completion(p.p, is_continuation);
-        p.v = p.p = 0;
-        return;
+      poll_events = EPOLLPRI;
+      break;
+    default:
+      poll_events = 0;
+      break;
     }
 
-    start_op(impl, op_type, p.p, is_continuation, false, false);
+    // Allocate and construct an operation to wrap the handler.
+    typedef linux_io_uring_wait_op<Handler, IoExecutor> op;
+    typename op::ptr p = { asio::detail::addressof(handler),
+      op::ptr::allocate(handler), 0 };
+    p.p = new (p.v) op(impl.descriptor_, poll_events, handler, io_ex);
+
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "descriptor",
+          &impl, impl.socket_, "async_wait"));
+
+    if (poll_events == 0)
+    {
+      p.p->ec_ = asio::error::invalid_argument;
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    }
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -263,18 +262,20 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_descriptor_write_op<ConstBufferSequence,
-        Handler, IoExecutor> op;
+    typedef linux_io_uring_write_op<
+      ConstBufferSequence, Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
     p.p = new (p.v) op(impl.descriptor_, buffers, handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
-          &impl, impl.descriptor_, "async_write_some"));
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "descriptor",
+          &impl, impl.socket_, "async_write_some"));
 
-    start_op(impl, reactor::write_op, p.p, is_continuation, true,
-        buffer_sequence_adapter<asio::const_buffer,
-          ConstBufferSequence>::all_empty(buffers));
+    if (buffer_sequence_adapter<asio::const_buffer,
+        ConstBufferSequence>::all_empty(buffers))
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -287,15 +288,15 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_null_buffers_op<Handler, IoExecutor> op;
+    typedef linux_io_uring_null_buffers_op<Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
+    p.p = new (p.v) op(impl.descriptor_, EPOLLOUT, handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
-          &impl, impl.descriptor_, "async_write_some(null_buffers)"));
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "descriptor",
+          &impl, impl.socket_, "async_write_some(null_buffers)"));
 
-    start_op(impl, reactor::write_op, p.p, is_continuation, false, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -333,18 +334,20 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_descriptor_read_op<MutableBufferSequence,
-        Handler, IoExecutor> op;
+    typedef linux_io_uring_read_op<
+        MutableBufferSequence, Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
     p.p = new (p.v) op(impl.descriptor_, buffers, handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
-          &impl, impl.descriptor_, "async_read_some"));
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "descriptor",
+          &impl, impl.socket_, "async_read_some"));
 
-    start_op(impl, reactor::read_op, p.p, is_continuation, true,
-        buffer_sequence_adapter<asio::mutable_buffer,
-          MutableBufferSequence>::all_empty(buffers));
+    if (buffer_sequence_adapter<asio::mutable_buffer,
+        MutableBufferSequence>::all_empty(buffers))
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -357,25 +360,21 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_null_buffers_op<Handler, IoExecutor> op;
+    typedef linux_io_uring_null_buffers_op<Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
+    p.p = new (p.v) op(impl.descriptor_, EPOLLIN, handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "descriptor",
-          &impl, impl.descriptor_, "async_read_some(null_buffers)"));
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "descriptor",
+          &impl, impl.socket_, "async_read_some(null_buffers)"));
 
-    start_op(impl, reactor::read_op, p.p, is_continuation, false, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
 private:
-  // Start the asynchronous operation.
-  ASIO_DECL void start_op(implementation_type& impl, int op_type,
-      reactor_op* op, bool is_continuation, bool is_non_blocking, bool noop);
-
   // The selector that performs event demultiplexing for the service.
-  reactor& reactor_;
+  linux_io_uring_manager& io_uring_manager_;
 };
 
 } // namespace detail
@@ -384,12 +383,9 @@ private:
 #include "asio/detail/pop_options.hpp"
 
 #if defined(ASIO_HEADER_ONLY)
-# include "asio/detail/impl/reactive_descriptor_service.ipp"
+# include "asio/detail/impl/linux_io_uring_descriptor_service.ipp"
 #endif // defined(ASIO_HEADER_ONLY)
 
-#endif // !defined(ASIO_WINDOWS)
-       //   && !defined(ASIO_HAS_IO_URING)
-       //   && !defined(ASIO_WINDOWS_RUNTIME)
-       //   && !defined(__CYGWIN__)
+#endif // defined(ASIO_HAS_IO_URING)
 
-#endif // ASIO_DETAIL_REACTIVE_DESCRIPTOR_SERVICE_HPP
+#endif // ASIO_DETAIL_LINUX_IO_URING_DESCRIPTOR_SERVICE_HPP

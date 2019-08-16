@@ -18,6 +18,7 @@
 #include "asio/detail/config.hpp"
 
 #if !defined(ASIO_WINDOWS) \
+  && !defined(ASIO_HAS_IO_URING) \
   && !defined(ASIO_WINDOWS_RUNTIME) \
   && !defined(__CYGWIN__)
 
@@ -216,6 +217,7 @@ void reactive_descriptor_service::start_op(
 #include "asio/detail/pop_options.hpp"
 
 #endif // !defined(ASIO_WINDOWS)
+       //   && !defined(ASIO_HAS_IO_URING)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)
 

@@ -1,5 +1,5 @@
 //
-// detail/descriptor_write_op.hpp
+// detail/reactive_descriptor_write_op.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
 // Copyright (c) 2003-2019 Christopher M. Kohlhoff (chris at kohlhoff dot com)
@@ -8,8 +8,8 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#ifndef ASIO_DETAIL_DESCRIPTOR_WRITE_OP_HPP
-#define ASIO_DETAIL_DESCRIPTOR_WRITE_OP_HPP
+#ifndef ASIO_DETAIL_REACTIVE_DESCRIPTOR_WRITE_OP_HPP
+#define ASIO_DETAIL_REACTIVE_DESCRIPTOR_WRITE_OP_HPP
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
 # pragma once
@@ -33,12 +33,12 @@ namespace asio {
 namespace detail {
 
 template <typename ConstBufferSequence>
-class descriptor_write_op_base : public reactor_op
+class reactive_descriptor_write_op_base : public reactor_op
 {
 public:
-  descriptor_write_op_base(int descriptor,
+  reactive_descriptor_write_op_base(int descriptor,
       const ConstBufferSequence& buffers, func_type complete_func)
-    : reactor_op(&descriptor_write_op_base::do_perform, complete_func),
+    : reactor_op(&reactive_descriptor_write_op_base::do_perform, complete_func),
       descriptor_(descriptor),
       buffers_(buffers)
   {
@@ -46,7 +46,8 @@ public:
 
   static status do_perform(reactor_op* base)
   {
-    descriptor_write_op_base* o(static_cast<descriptor_write_op_base*>(base));
+    reactive_descriptor_write_op_base* o(
+        static_cast<reactive_descriptor_write_op_base*>(base));
 
     buffer_sequence_adapter<asio::const_buffer,
         ConstBufferSequence> bufs(o->buffers_);
@@ -67,16 +68,17 @@ private:
 };
 
 template <typename ConstBufferSequence, typename Handler, typename IoExecutor>
-class descriptor_write_op
-  : public descriptor_write_op_base<ConstBufferSequence>
+class reactive_descriptor_write_op
+  : public reactive_descriptor_write_op_base<ConstBufferSequence>
 {
 public:
-  ASIO_DEFINE_HANDLER_PTR(descriptor_write_op);
+  ASIO_DEFINE_HANDLER_PTR(reactive_descriptor_write_op);
 
-  descriptor_write_op(int descriptor, const ConstBufferSequence& buffers,
+  reactive_descriptor_write_op(int descriptor,
+      const ConstBufferSequence& buffers,
       Handler& handler, const IoExecutor& io_ex)
-    : descriptor_write_op_base<ConstBufferSequence>(
-        descriptor, buffers, &descriptor_write_op::do_complete),
+    : reactive_descriptor_write_op_base<ConstBufferSequence>(
+        descriptor, buffers, &reactive_descriptor_write_op::do_complete),
       handler_(ASIO_MOVE_CAST(Handler)(handler)),
       io_executor_(io_ex)
   {
@@ -88,7 +90,8 @@ public:
       std::size_t /*bytes_transferred*/)
   {
     // Take ownership of the handler object.
-    descriptor_write_op* o(static_cast<descriptor_write_op*>(base));
+    reactive_descriptor_write_op* o(
+        static_cast<reactive_descriptor_write_op*>(base));
     ptr p = { asio::detail::addressof(o->handler_), o, o };
     handler_work<Handler, IoExecutor> w(o->handler_, o->io_executor_);
 
@@ -127,4 +130,4 @@ private:
 
 #endif // !defined(ASIO_WINDOWS) && !defined(__CYGWIN__)
 
-#endif // ASIO_DETAIL_DESCRIPTOR_WRITE_OP_HPP
+#endif // ASIO_DETAIL_REACTIVE_DESCRIPTOR_WRITE_OP_HPP

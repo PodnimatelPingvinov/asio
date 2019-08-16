@@ -24,12 +24,17 @@
 #include "asio/detail/handler_type_requirements.hpp"
 #include "asio/detail/io_object_impl.hpp"
 #include "asio/detail/non_const_lvalue.hpp"
-#include "asio/detail/reactive_descriptor_service.hpp"
 #include "asio/detail/throw_error.hpp"
 #include "asio/error.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/executor.hpp"
 #include "asio/posix/descriptor_base.hpp"
+
+#if defined(ASIO_HAS_IO_URING)
+# include "asio/detail/linux_io_uring_descriptor_service.hpp"
+#else
+# include "asio/detail/reactive_descriptor_service.hpp"
+#endif
 
 #if defined(ASIO_HAS_MOVE)
 # include <utility>
@@ -60,6 +65,9 @@ public:
   /// The native representation of a descriptor.
 #if defined(GENERATING_DOCUMENTATION)
   typedef implementation_defined native_handle_type;
+#elif defined(ASIO_HAS_IO_URING)
+  typedef detail::linux_io_uring_descriptor_service::native_handle_type
+    native_handle_type;
 #else
   typedef detail::reactive_descriptor_service::native_handle_type
     native_handle_type;
@@ -306,6 +314,9 @@ public:
    * All outstanding asynchronous read or write operations will finish
    * immediately, and the handlers for cancelled operations will be passed the
    * asio::error::operation_aborted error.
+   *
+   * @note When io_uring backend is used, this function doesn't cancel any
+   * operations.
    */
   native_handle_type release()
   {
@@ -319,7 +330,14 @@ public:
    * passed the asio::error::operation_aborted error.
    *
    * @throws asio::system_error Thrown on failure.
+   *
+   * @note Calls to cancel() will always fail with
+   * asio::error::operation_not_supported when run on io_uring backend.
    */
+#if defined(ASIO_HAS_IO_URING)
+  ASIO_DECL_DEPRECATED("This function always fails with "
+        "operation_not_supported when used on io_uring backend.")
+#endif
   void cancel()
   {
     asio::error_code ec;
@@ -334,7 +352,14 @@ public:
    * passed the asio::error::operation_aborted error.
    *
    * @param ec Set to indicate what error occurred, if any.
+   *
+   * @note Calls to cancel() will always fail with
+   * asio::error::operation_not_supported when run on io_uring backend.
    */
+#if defined(ASIO_HAS_IO_URING)
+  ASIO_DECL_DEPRECATED("This function always fails with "
+        "operation_not_supported when used on io_uring backend.")
+#endif
   ASIO_SYNC_OP_VOID cancel(asio::error_code& ec)
   {
     impl_.get_service().cancel(impl_.get_implementation(), ec);
@@ -634,7 +659,13 @@ protected:
   {
   }
 
-  detail::io_object_impl<detail::reactive_descriptor_service, Executor> impl_;
+#if defined(ASIO_HAS_IO_URING)
+  detail::io_object_impl<
+    detail::linux_io_uring_descriptor_service, Executor> impl_;
+#else
+  detail::io_object_impl<
+    detail::reactive_descriptor_service, Executor> impl_;
+#endif
 
 private:
   // Disallow copying and assignment.

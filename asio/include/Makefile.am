@@ -28,11 +28,11 @@ nobase_include_HEADERS = \
 	asio/buffered_write_stream.hpp \
 	asio/buffer.hpp \
 	asio/buffers_iterator.hpp \
-	asio/co_spawn.hpp \
 	asio/completion_condition.hpp \
 	asio/compose.hpp \
 	asio/connect.hpp \
 	asio/coroutine.hpp \
+	asio/co_spawn.hpp \
 	asio/deadline_timer.hpp \
 	asio/defer.hpp \
 	asio/detached.hpp \
@@ -60,8 +60,7 @@ nobase_include_HEADERS = \
 	asio/detail/deadline_timer_service.hpp \
 	asio/detail/dependent_type.hpp \
 	asio/detail/descriptor_ops.hpp \
-	asio/detail/descriptor_read_op.hpp \
-	asio/detail/descriptor_write_op.hpp \
+	asio/detail/descriptor_serial_port_service.hpp \
 	asio/detail/dev_poll_reactor.hpp \
 	asio/detail/epoll_reactor.hpp \
 	asio/detail/eventfd_select_interrupter.hpp \
@@ -86,6 +85,7 @@ nobase_include_HEADERS = \
 	asio/detail/hash_map.hpp \
 	asio/detail/impl/buffer_sequence_adapter.ipp \
 	asio/detail/impl/descriptor_ops.ipp \
+	asio/detail/impl/descriptor_serial_port_service.ipp \
 	asio/detail/impl/dev_poll_reactor.hpp \
 	asio/detail/impl/dev_poll_reactor.ipp \
 	asio/detail/impl/epoll_reactor.hpp \
@@ -94,6 +94,10 @@ nobase_include_HEADERS = \
 	asio/detail/impl/handler_tracking.ipp \
 	asio/detail/impl/kqueue_reactor.hpp \
 	asio/detail/impl/kqueue_reactor.ipp \
+	asio/detail/impl/linux_io_uring_descriptor_service.ipp \
+	asio/detail/impl/linux_io_uring_manager.hpp \
+	asio/detail/impl/linux_io_uring_manager.ipp \
+	asio/detail/impl/linux_io_uring_socket_service_base.ipp \
 	asio/detail/impl/null_event.ipp \
 	asio/detail/impl/pipe_select_interrupter.ipp \
 	asio/detail/impl/posix_event.ipp \
@@ -101,7 +105,6 @@ nobase_include_HEADERS = \
 	asio/detail/impl/posix_thread.ipp \
 	asio/detail/impl/posix_tss_ptr.ipp \
 	asio/detail/impl/reactive_descriptor_service.ipp \
-	asio/detail/impl/reactive_serial_port_service.ipp \
 	asio/detail/impl/reactive_socket_service_base.ipp \
 	asio/detail/impl/resolver_service_base.ipp \
 	asio/detail/impl/scheduler.ipp \
@@ -142,6 +145,22 @@ nobase_include_HEADERS = \
 	asio/detail/keyword_tss_ptr.hpp \
 	asio/detail/kqueue_reactor.hpp \
 	asio/detail/limits.hpp \
+	asio/detail/linux_io_uring_accept_op.hpp \
+	asio/detail/linux_io_uring_connect_op.hpp \
+	asio/detail/linux_io_uring_descriptor_service.hpp \
+	asio/detail/linux_io_uring_manager.hpp \
+	asio/detail/linux_io_uring_null_buffers_op.hpp \
+	asio/detail/linux_io_uring_operation.hpp \
+	asio/detail/linux_io_uring_read_op.hpp \
+	asio/detail/linux_io_uring_recvfrom_op.hpp \
+	asio/detail/linux_io_uring_recvmsg_op.hpp \
+	asio/detail/linux_io_uring_recv_op.hpp \
+	asio/detail/linux_io_uring_send_op.hpp \
+	asio/detail/linux_io_uring_sendto_op.hpp \
+	asio/detail/linux_io_uring_socket_service_base.hpp \
+	asio/detail/linux_io_uring_socket_service.hpp \
+	asio/detail/linux_io_uring_wait_op.hpp \
+	asio/detail/linux_io_uring_write_op.hpp \
 	asio/detail/local_free_on_block_exit.hpp \
 	asio/detail/macos_fenced_block.hpp \
 	asio/detail/memory.hpp \
@@ -173,9 +192,10 @@ nobase_include_HEADERS = \
 	asio/detail/posix_thread.hpp \
 	asio/detail/posix_tss_ptr.hpp \
 	asio/detail/push_options.hpp \
+	asio/detail/reactive_descriptor_read_op.hpp \
 	asio/detail/reactive_descriptor_service.hpp \
+	asio/detail/reactive_descriptor_write_op.hpp \
 	asio/detail/reactive_null_buffers_op.hpp \
-	asio/detail/reactive_serial_port_service.hpp \
 	asio/detail/reactive_socket_accept_op.hpp \
 	asio/detail/reactive_socket_connect_op.hpp \
 	asio/detail/reactive_socket_recvfrom_op.hpp \
@@ -308,9 +328,9 @@ nobase_include_HEADERS = \
 	asio/impl/awaitable.hpp \
 	asio/impl/buffered_read_stream.hpp \
 	asio/impl/buffered_write_stream.hpp \
-	asio/impl/co_spawn.hpp \
 	asio/impl/compose.hpp \
 	asio/impl/connect.hpp \
+	asio/impl/co_spawn.hpp \
 	asio/impl/defer.hpp \
 	asio/impl/detached.hpp \
 	asio/impl/dispatch.hpp \

@@ -81,6 +81,12 @@ public:
     }
   }
 
+  void clear()
+  {
+      front_ = 0;
+      back_ = 0;
+  }
+
   // Get the operation at the front of the queue.
   Operation* front()
   {

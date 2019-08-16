@@ -34,9 +34,11 @@
 # include "asio/detail/scheduler.hpp"
 #endif // defined(ASIO_HAS_IOCP)
 
-#if !defined(ASIO_WINDOWS) && !defined(__CYGWIN__)
+#if defined(ASIO_HAS_IO_URING)
+# include "asio/detail/linux_io_uring_manager.hpp"
+#elif !defined(ASIO_WINDOWS) && !defined(__CYGWIN__)
 # include "asio/detail/reactor.hpp"
-#endif // !defined(ASIO_WINDOWS) && !defined(__CYGWIN__)
+#endif
 
 #include "asio/detail/push_options.hpp"
 
@@ -200,11 +202,15 @@ private:
   // The type used for registering for pipe reactor notifications.
   class pipe_read_op;
 
-  // The reactor used for waiting for pipe readiness.
-  reactor& reactor_;
+  // The selector used for waiting for pipe readiness.
+# if defined(ASIO_HAS_IO_URING)
+  linux_io_uring_manager& selector_;
+# else // defined(ASIO_HAS_IO_URING)
+  reactor& selector_;
 
   // The per-descriptor reactor data used for the pipe.
   reactor::per_descriptor_data reactor_data_;
+# endif // defined(ASIO_HAS_IO_URING)
 #endif // !defined(ASIO_WINDOWS)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)

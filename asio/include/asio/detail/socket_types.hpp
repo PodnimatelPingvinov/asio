@@ -89,6 +89,10 @@
 #  include <sys/filio.h>
 #  include <sys/sockio.h>
 # endif
+# if defined(ASIO_HAS_IO_URING)
+#  include <liburing.h>
+#  include <sys/epoll.h>
+# endif
 #endif
 
 #include "asio/detail/push_options.hpp"

@@ -22,6 +22,8 @@
 # include "asio/detail/winrt_timer_scheduler.hpp"
 #elif defined(ASIO_HAS_IOCP)
 # include "asio/detail/win_iocp_io_context.hpp"
+#elif defined(ASIO_HAS_IO_URING)
+# include "asio/detail/linux_io_uring_manager.hpp"
 #elif defined(ASIO_HAS_EPOLL)
 # include "asio/detail/epoll_reactor.hpp"
 #elif defined(ASIO_HAS_KQUEUE)

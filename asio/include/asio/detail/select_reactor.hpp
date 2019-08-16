@@ -21,6 +21,7 @@
   || (!defined(ASIO_HAS_DEV_POLL) \
       && !defined(ASIO_HAS_EPOLL) \
       && !defined(ASIO_HAS_KQUEUE) \
+      && !defined(ASIO_HAS_IO_URING) \
       && !defined(ASIO_WINDOWS_RUNTIME))
 
 #include <cstddef>
@@ -233,6 +234,7 @@ private:
        //   || (!defined(ASIO_HAS_DEV_POLL)
        //       && !defined(ASIO_HAS_EPOLL)
        //       && !defined(ASIO_HAS_KQUEUE)
+       //       && !defined(ASIO_HAS_IO_URING)
        //       && !defined(ASIO_WINDOWS_RUNTIME))
 
 #endif // ASIO_DETAIL_SELECT_REACTOR_HPP

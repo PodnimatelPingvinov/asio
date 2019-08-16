@@ -107,6 +107,12 @@ public:
     return values_.empty();
   }
 
+  // Get the number of elements in the hash.
+  std::size_t size() const
+  {
+      return size_;
+  };
+
   // Find an entry in the map.
   iterator find(const K& k)
   {

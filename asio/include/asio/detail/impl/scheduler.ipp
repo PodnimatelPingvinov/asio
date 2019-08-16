@@ -20,10 +20,15 @@
 #include "asio/detail/concurrency_hint.hpp"
 #include "asio/detail/event.hpp"
 #include "asio/detail/limits.hpp"
-#include "asio/detail/reactor.hpp"
 #include "asio/detail/scheduler.hpp"
 #include "asio/detail/scheduler_thread_info.hpp"
 #include "asio/detail/signal_blocker.hpp"
+
+#if defined(ASIO_HAS_IO_URING)
+# include "asio/detail/linux_io_uring_manager.hpp"
+#else // defined(ASIO_HAS_IO_URING)
+# include "asio/detail/reactor.hpp"
+#endif // defined(ASIO_HAS_IO_URING)
 
 #include "asio/detail/push_options.hpp"
 
@@ -174,7 +179,7 @@ void scheduler::init_task()
   mutex::scoped_lock lock(mutex_);
   if (!shutdown_ && !task_)
   {
-    task_ = &use_service<reactor>(this->context());
+    task_ = &use_service<task_type>(this->context());
     op_queue_.push(&task_operation_);
     wake_one_thread_and_unlock(lock);
   }

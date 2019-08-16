@@ -23,15 +23,22 @@
 #include "asio/detail/conditionally_enabled_event.hpp"
 #include "asio/detail/conditionally_enabled_mutex.hpp"
 #include "asio/detail/op_queue.hpp"
-#include "asio/detail/reactor_fwd.hpp"
 #include "asio/detail/scheduler_operation.hpp"
 #include "asio/detail/thread.hpp"
 #include "asio/detail/thread_context.hpp"
+
+#if !defined(ASIO_HAS_IO_URING)
+# include "asio/detail/reactor_fwd.hpp"
+#endif
 
 #include "asio/detail/push_options.hpp"
 
 namespace asio {
 namespace detail {
+
+#if defined(ASIO_HAS_IO_URING)
+class linux_io_uring_manager;
+#endif
 
 struct scheduler_thread_info;
 
@@ -182,7 +189,12 @@ private:
   event wakeup_event_;
 
   // The task to be run by this service.
-  reactor* task_;
+#if defined(ASIO_HAS_IO_URING)
+  typedef class linux_io_uring_manager task_type;
+#else
+  typedef reactor task_type;
+#endif
+  task_type* task_;
 
   // Operation object to represent the position of the task in the queue.
   struct task_operation : operation

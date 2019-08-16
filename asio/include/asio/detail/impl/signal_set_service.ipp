@@ -19,7 +19,6 @@
 
 #include <cstring>
 #include <stdexcept>
-#include "asio/detail/reactor.hpp"
 #include "asio/detail/signal_blocker.hpp"
 #include "asio/detail/signal_set_service.hpp"
 #include "asio/detail/static_mutex.hpp"
@@ -124,7 +123,11 @@ signal_set_service::signal_set_service(execution_context& context)
 #if !defined(ASIO_WINDOWS) \
   && !defined(ASIO_WINDOWS_RUNTIME) \
   && !defined(__CYGWIN__)
-    reactor_(asio::use_service<reactor>(context)),
+# if defined(ASIO_HAS_IO_URING)
+    selector_(use_service<linux_io_uring_manager>(context)),
+# else // defined(ASIO_HAS_IO_URING)
+    selector_(asio::use_service<reactor>(context)),
+# endif // defined(ASIO_HAS_IO_URING)
 #endif // !defined(ASIO_WINDOWS)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)
@@ -136,7 +139,7 @@ signal_set_service::signal_set_service(execution_context& context)
 #if !defined(ASIO_WINDOWS) \
   && !defined(ASIO_WINDOWS_RUNTIME) \
   && !defined(__CYGWIN__)
-  reactor_.init_task();
+  selector_.init_task();
 #endif // !defined(ASIO_WINDOWS)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)
@@ -186,8 +189,12 @@ void signal_set_service::notify_fork(execution_context::fork_event fork_ev)
       int read_descriptor = state->read_descriptor_;
       state->fork_prepared_ = true;
       lock.unlock();
-      reactor_.deregister_internal_descriptor(read_descriptor, reactor_data_);
-      reactor_.cleanup_descriptor_data(reactor_data_);
+#if defined(ASIO_HAS_IO_URING)
+      selector_.deregister_internal_read_descriptor(read_descriptor);
+#else // defined(ASIO_HAS_IO_URING)
+      selector_.deregister_internal_descriptor(read_descriptor, reactor_data_);
+      selector_.cleanup_descriptor_data(reactor_data_);
+#endif // defined(ASIO_HAS_IO_URING)
     }
     break;
   case execution_context::fork_parent:
@@ -196,8 +203,13 @@ void signal_set_service::notify_fork(execution_context::fork_event fork_ev)
       int read_descriptor = state->read_descriptor_;
       state->fork_prepared_ = false;
       lock.unlock();
-      reactor_.register_internal_descriptor(reactor::read_op,
+#if defined(ASIO_HAS_IO_URING)
+      selector_.register_internal_read_descriptor(read_descriptor,
+          new pipe_read_op);
+#else // defined(ASIO_HAS_IO_URING)
+      selector_.register_internal_descriptor(reactor::read_op,
           read_descriptor, reactor_data_, new pipe_read_op);
+#endif // defined(ASIO_HAS_IO_URING)
     }
     break;
   case execution_context::fork_child:
@@ -209,8 +221,13 @@ void signal_set_service::notify_fork(execution_context::fork_event fork_ev)
       int read_descriptor = state->read_descriptor_;
       state->fork_prepared_ = false;
       lock.unlock();
-      reactor_.register_internal_descriptor(reactor::read_op,
+#if defined(ASIO_HAS_IO_URING)
+      selector_.register_internal_read_descriptor(read_descriptor,
+          new pipe_read_op);
+#else // defined(ASIO_HAS_IO_URING)
+      selector_.register_internal_descriptor(reactor::read_op,
           read_descriptor, reactor_data_, new pipe_read_op);
+#endif // !defined(ASIO_HAS_IO_URING)
     }
     break;
   default:
@@ -537,8 +554,13 @@ void signal_set_service::add_service(signal_set_service* service)
   // Register for pipe readiness notifications.
   int read_descriptor = state->read_descriptor_;
   lock.unlock();
-  service->reactor_.register_internal_descriptor(reactor::read_op,
+# if defined(ASIO_HAS_IO_URING)
+  service->selector_.register_internal_read_descriptor(read_descriptor,
+      new pipe_read_op);
+# else // defined(ASIO_HAS_IO_URING)
+  service->selector_.register_internal_descriptor(reactor::read_op,
       read_descriptor, service->reactor_data_, new pipe_read_op);
+# endif // defined(ASIO_HAS_IO_URING)
 #endif // !defined(ASIO_WINDOWS)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)
@@ -557,11 +579,16 @@ void signal_set_service::remove_service(signal_set_service* service)
     // Disable the pipe readiness notifications.
     int read_descriptor = state->read_descriptor_;
     lock.unlock();
-    service->reactor_.deregister_internal_descriptor(
+# if defined(ASIO_HAS_IO_URING)
+    service->selector_.deregister_internal_read_descriptor(read_descriptor);
+# else // defined(ASIO_HAS_IO_URING)
+    service->selector_.deregister_internal_descriptor(
         read_descriptor, service->reactor_data_);
-    service->reactor_.cleanup_descriptor_data(service->reactor_data_);
+    service->selector_.cleanup_descriptor_data(service->reactor_data_);
+# endif // defined(ASIO_HAS_IO_URING)
     lock.lock();
 #endif // !defined(ASIO_WINDOWS)
+       //   && !defined(ASIO_HAS_IO_URING)
        //   && !defined(ASIO_WINDOWS_RUNTIME)
        //   && !defined(__CYGWIN__)
 

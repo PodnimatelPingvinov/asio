@@ -1,15 +1,16 @@
 //
-// detail/reactive_socket_service_base.hpp
+// detail/linux_io_uring_socket_service_base.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
 // Copyright (c) 2003-2019 Christopher M. Kohlhoff (chris at kohlhoff dot com)
+// Copyright (c) 2019 George Shramov (goxash at gmail dot com)
 //
 // Distributed under the Boost Software License, Version 1.0. (See accompanying
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#ifndef ASIO_DETAIL_REACTIVE_SOCKET_SERVICE_BASE_HPP
-#define ASIO_DETAIL_REACTIVE_SOCKET_SERVICE_BASE_HPP
+#ifndef ASIO_DETAIL_LINUX_IO_URING_SOCKET_SERVICE_BASE_HPP
+#define ASIO_DETAIL_LINUX_IO_URING_SOCKET_SERVICE_BASE_HPP
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
 # pragma once
@@ -17,23 +18,21 @@
 
 #include "asio/detail/config.hpp"
 
-#if !defined(ASIO_HAS_IOCP) \
-  && !defined(ASIO_WINDOWS_RUNTIME) \
-  && !defined(ASIO_HAS_IO_URING)
+#if defined(ASIO_HAS_IO_URING)
 
 #include "asio/buffer.hpp"
 #include "asio/error.hpp"
 #include "asio/execution_context.hpp"
 #include "asio/socket_base.hpp"
 #include "asio/detail/buffer_sequence_adapter.hpp"
+#include "asio/detail/linux_io_uring_connect_op.hpp"
+#include "asio/detail/linux_io_uring_manager.hpp"
+#include "asio/detail/linux_io_uring_null_buffers_op.hpp"
+#include "asio/detail/linux_io_uring_recv_op.hpp"
+#include "asio/detail/linux_io_uring_recvmsg_op.hpp"
+#include "asio/detail/linux_io_uring_send_op.hpp"
+#include "asio/detail/linux_io_uring_wait_op.hpp"
 #include "asio/detail/memory.hpp"
-#include "asio/detail/reactive_null_buffers_op.hpp"
-#include "asio/detail/reactive_socket_recv_op.hpp"
-#include "asio/detail/reactive_socket_recvmsg_op.hpp"
-#include "asio/detail/reactive_socket_send_op.hpp"
-#include "asio/detail/reactive_wait_op.hpp"
-#include "asio/detail/reactor.hpp"
-#include "asio/detail/reactor_op.hpp"
 #include "asio/detail/socket_holder.hpp"
 #include "asio/detail/socket_ops.hpp"
 #include "asio/detail/socket_types.hpp"
@@ -43,7 +42,7 @@
 namespace asio {
 namespace detail {
 
-class reactive_socket_service_base
+class linux_io_uring_socket_service_base
 {
 public:
   // The native type of a socket.
@@ -57,13 +56,10 @@ public:
 
     // The current state of the socket.
     socket_ops::state_type state_;
-
-    // Per-descriptor data used by the reactor.
-    reactor::per_descriptor_data reactor_data_;
   };
 
   // Constructor.
-  ASIO_DECL reactive_socket_service_base(execution_context& context);
+  ASIO_DECL linux_io_uring_socket_service_base(execution_context& context);
 
   // Destroy all user-defined handler objects owned by the service.
   ASIO_DECL void base_shutdown();
@@ -77,7 +73,7 @@ public:
 
   // Move-assign from another socket implementation.
   ASIO_DECL void base_move_assign(base_implementation_type& impl,
-      reactive_socket_service_base& other_service,
+      linux_io_uring_socket_service_base& other_service,
       base_implementation_type& other_impl);
 
   // Destroy a socket implementation.
@@ -200,35 +196,39 @@ public:
     bool is_continuation =
       asio_handler_cont_helpers::is_continuation(handler);
 
-    // Allocate and construct an operation to wrap the handler.
-    typedef reactive_wait_op<Handler, IoExecutor> op;
-    typename op::ptr p = { asio::detail::addressof(handler),
-      op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
-
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
-          &impl, impl.socket_, "async_wait"));
-
-    int op_type;
+    short poll_events;
     switch (w)
     {
-      case socket_base::wait_read:
-        op_type = reactor::read_op;
-        break;
-      case socket_base::wait_write:
-        op_type = reactor::write_op;
-        break;
-      case socket_base::wait_error:
-        op_type = reactor::except_op;
-        break;
-      default:
-        p.p->ec_ = asio::error::invalid_argument;
-        reactor_.post_immediate_completion(p.p, is_continuation);
-        p.v = p.p = 0;
-        return;
+    case socket_base::wait_read:
+      poll_events = EPOLLIN;
+      break;
+    case socket_base::wait_write:
+      poll_events = EPOLLOUT;
+      break;
+    case socket_base::wait_error:
+      poll_events = EPOLLPRI;
+      break;
+    default:
+      poll_events = 0;
+      break;
     }
 
-    start_op(impl, op_type, p.p, is_continuation, false, false);
+    // Allocate and construct an operation to wrap the handler.
+    typedef linux_io_uring_wait_op<Handler, IoExecutor> op;
+    typename op::ptr p = { asio::detail::addressof(handler),
+      op::ptr::allocate(handler), 0 };
+    p.p = new (p.v) op(impl.socket_, poll_events, handler, io_ex);
+
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
+          &impl, impl.socket_, "async_wait"));
+
+    if (poll_events == 0)
+    {
+      p.p->ec_ = asio::error::invalid_argument;
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    }
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -266,20 +266,22 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_socket_send_op<
-        ConstBufferSequence, Handler, IoExecutor> op;
+    typedef linux_io_uring_send_op<
+      ConstBufferSequence, Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(impl.socket_, impl.state_,
-        buffers, flags, handler, io_ex);
+    p.p = new (p.v) op(impl.socket_, impl.state_, buffers, flags,
+      handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_send"));
 
-    start_op(impl, reactor::write_op, p.p, is_continuation, true,
-        ((impl.state_ & socket_ops::stream_oriented)
+    if ((impl.state_ & socket_ops::stream_oriented)
           && buffer_sequence_adapter<asio::const_buffer,
-            ConstBufferSequence>::all_empty(buffers)));
+            ConstBufferSequence>::all_empty(buffers))
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -292,15 +294,15 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_null_buffers_op<Handler, IoExecutor> op;
+    typedef linux_io_uring_null_buffers_op<Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
+    p.p = new (p.v) op(impl.socket_, EPOLLOUT, handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_send(null_buffers)"));
 
-    start_op(impl, reactor::write_op, p.p, is_continuation, false, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -339,24 +341,22 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_socket_recv_op<
+    typedef linux_io_uring_recv_op<
         MutableBufferSequence, Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(impl.socket_, impl.state_,
-        buffers, flags, handler, io_ex);
+    p.p = new (p.v) op(impl.socket_, impl.state_, buffers, flags,
+        handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_receive"));
 
-    start_op(impl,
-        (flags & socket_base::message_out_of_band)
-          ? reactor::except_op : reactor::read_op,
-        p.p, is_continuation,
-        (flags & socket_base::message_out_of_band) == 0,
-        ((impl.state_ & socket_ops::stream_oriented)
+    if ((impl.state_ & socket_ops::stream_oriented)
           && buffer_sequence_adapter<asio::mutable_buffer,
-            MutableBufferSequence>::all_empty(buffers)));
+            MutableBufferSequence>::all_empty(buffers))
+      io_uring_manager_.post_immediate_completion(p.p, is_continuation);
+    else
+      io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -370,18 +370,17 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_null_buffers_op<Handler, IoExecutor> op;
+    typedef linux_io_uring_null_buffers_op<Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
+    p.p = new (p.v) op(impl.socket_,
+      (flags & socket_base::message_out_of_band) ? EPOLLPRI : EPOLLIN,
+      handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_receive(null_buffers)"));
 
-    start_op(impl,
-        (flags & socket_base::message_out_of_band)
-          ? reactor::except_op : reactor::read_op,
-        p.p, is_continuation, false, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -428,21 +427,17 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_socket_recvmsg_op<
+    typedef linux_io_uring_recvmsg_op<
         MutableBufferSequence, Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(impl.socket_, buffers,
-        in_flags, out_flags, handler, io_ex);
+    p.p = new (p.v) op(impl.socket_, buffers, in_flags, out_flags,
+        handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_receive_with_flags"));
 
-    start_op(impl,
-        (in_flags & socket_base::message_out_of_band)
-          ? reactor::except_op : reactor::read_op,
-        p.p, is_continuation,
-        (in_flags & socket_base::message_out_of_band) == 0, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -457,22 +452,21 @@ public:
       asio_handler_cont_helpers::is_continuation(handler);
 
     // Allocate and construct an operation to wrap the handler.
-    typedef reactive_null_buffers_op<Handler, IoExecutor> op;
+    typedef linux_io_uring_null_buffers_op<Handler, IoExecutor> op;
     typename op::ptr p = { asio::detail::addressof(handler),
       op::ptr::allocate(handler), 0 };
-    p.p = new (p.v) op(handler, io_ex);
+    p.p = new (p.v) op(impl.socket_,
+      (in_flags & socket_base::message_out_of_band) ? EPOLLPRI : EPOLLIN,
+      handler, io_ex);
 
-    ASIO_HANDLER_CREATION((reactor_.context(), *p.p, "socket",
+    ASIO_HANDLER_CREATION((io_uring_manager_.context(), *p.p, "socket",
           &impl, impl.socket_, "async_receive_with_flags(null_buffers)"));
 
     // Clear out_flags, since we cannot give it any other sensible value when
     // performing a null_buffers operation.
     out_flags = 0;
 
-    start_op(impl,
-        (in_flags & socket_base::message_out_of_band)
-          ? reactor::except_op : reactor::read_op,
-        p.p, is_continuation, false, false);
+    io_uring_manager_.start_op(p.p, is_continuation);
     p.v = p.p = 0;
   }
 
@@ -487,21 +481,17 @@ protected:
       base_implementation_type& impl, int type,
       const native_handle_type& native_socket, asio::error_code& ec);
 
-  // Start the asynchronous read or write operation.
-  ASIO_DECL void start_op(base_implementation_type& impl, int op_type,
-      reactor_op* op, bool is_continuation, bool is_non_blocking, bool noop);
-
   // Start the asynchronous accept operation.
-  ASIO_DECL void start_accept_op(base_implementation_type& impl,
-      reactor_op* op, bool is_continuation, bool peer_is_open);
+  ASIO_DECL void start_accept_op(linux_io_uring_operation* op,
+      bool is_continuation, bool peer_is_open);
 
   // Start the asynchronous connect operation.
   ASIO_DECL void start_connect_op(base_implementation_type& impl,
-      reactor_op* op, bool is_continuation,
+      linux_io_uring_operation* op, bool is_continuation,
       const socket_addr_type* addr, size_t addrlen);
 
   // The selector that performs event demultiplexing for the service.
-  reactor& reactor_;
+  linux_io_uring_manager& io_uring_manager_;
 };
 
 } // namespace detail
@@ -510,11 +500,9 @@ protected:
 #include "asio/detail/pop_options.hpp"
 
 #if defined(ASIO_HEADER_ONLY)
-# include "asio/detail/impl/reactive_socket_service_base.ipp"
+# include "asio/detail/impl/linux_io_uring_socket_service_base.ipp"
 #endif // defined(ASIO_HEADER_ONLY)
 
-#endif // !defined(ASIO_HAS_IOCP)
-       //   && !defined(ASIO_WINDOWS_RUNTIME)
-       //   && !defined(ASIO_HAS_IO_URING)
+#endif // defined(ASIO_HAS_IO_URING)
 
-#endif // ASIO_DETAIL_REACTIVE_SOCKET_SERVICE_BASE_HPP
+#endif // ASIO_DETAIL_LINUX_IO_URING_SOCKET_SERVICE_BASE_HPP

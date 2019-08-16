@@ -1,5 +1,5 @@
 //
-// detail/reactive_serial_port_service.hpp
+// detail/descriptor_serial_port_service.hpp
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 //
 // Copyright (c) 2003-2019 Christopher M. Kohlhoff (chris at kohlhoff dot com)
@@ -9,8 +9,8 @@
 // file LICENSE_1_0.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
 //
 
-#ifndef ASIO_DETAIL_REACTIVE_SERIAL_PORT_SERVICE_HPP
-#define ASIO_DETAIL_REACTIVE_SERIAL_PORT_SERVICE_HPP
+#ifndef ASIO_DETAIL_DESCRIPTOR_SERIAL_PORT_SERVICE_HPP
+#define ASIO_DETAIL_DESCRIPTOR_SERIAL_PORT_SERVICE_HPP
 
 #if defined(_MSC_VER) && (_MSC_VER >= 1200)
 # pragma once
@@ -26,25 +26,37 @@
 #include "asio/execution_context.hpp"
 #include "asio/serial_port_base.hpp"
 #include "asio/detail/descriptor_ops.hpp"
-#include "asio/detail/reactive_descriptor_service.hpp"
+
+#if defined(ASIO_HAS_IO_URING)
+# include "asio/detail/linux_io_uring_descriptor_service.hpp"
+#else // defined(ASIO_HAS_IO_URING)
+# include "asio/detail/reactive_descriptor_service.hpp"
+#endif // defined(ASIO_HAS_IO_URING)
 
 #include "asio/detail/push_options.hpp"
 
 namespace asio {
 namespace detail {
 
-// Extend reactive_descriptor_service to provide serial port support.
-class reactive_serial_port_service :
-  public execution_context_service_base<reactive_serial_port_service>
+// Extend descriptor_service to provide serial port support.
+class descriptor_serial_port_service :
+  public execution_context_service_base<descriptor_serial_port_service>
 {
+  // The underlying descriptor service implementation
+#if defined(ASIO_HAS_IO_URING)
+  typedef class linux_io_uring_descriptor_service descriptor_service_type;
+#else // defined(ASIO_HAS_IO_URING)
+  typedef class reactive_descriptor_service descriptor_service_type;
+#endif // defined(ASIO_HAS_IO_URING)
+
 public:
   // The native type of a serial port.
-  typedef reactive_descriptor_service::native_handle_type native_handle_type;
+  typedef descriptor_service_type::native_handle_type native_handle_type;
 
   // The implementation type of the serial port.
-  typedef reactive_descriptor_service::implementation_type implementation_type;
+  typedef descriptor_service_type::implementation_type implementation_type;
 
-  ASIO_DECL reactive_serial_port_service(execution_context& context);
+  ASIO_DECL descriptor_serial_port_service(execution_context& context);
 
   // Destroy all user-defined handler objects owned by the service.
   ASIO_DECL void shutdown();
@@ -64,7 +76,7 @@ public:
 
   // Move-assign from another serial port implementation.
   void move_assign(implementation_type& impl,
-      reactive_serial_port_service& other_service,
+      descriptor_serial_port_service& other_service,
       implementation_type& other_impl)
   {
     descriptor_service_.move_assign(impl,
@@ -121,7 +133,7 @@ public:
       const SettableSerialPortOption& option, asio::error_code& ec)
   {
     return do_set_option(impl,
-        &reactive_serial_port_service::store_option<SettableSerialPortOption>,
+        &descriptor_serial_port_service::store_option<SettableSerialPortOption>,
         &option, ec);
   }
 
@@ -131,7 +143,7 @@ public:
       GettableSerialPortOption& option, asio::error_code& ec) const
   {
     return do_get_option(impl,
-        &reactive_serial_port_service::load_option<GettableSerialPortOption>,
+        &descriptor_serial_port_service::load_option<GettableSerialPortOption>,
         &option, ec);
   }
 
@@ -220,7 +232,7 @@ private:
       void* option, asio::error_code& ec) const;
 
   // The implementation used for initiating asynchronous operations.
-  reactive_descriptor_service descriptor_service_;
+  descriptor_service_type descriptor_service_;
 };
 
 } // namespace detail
@@ -229,10 +241,10 @@ private:
 #include "asio/detail/pop_options.hpp"
 
 #if defined(ASIO_HEADER_ONLY)
-# include "asio/detail/impl/reactive_serial_port_service.ipp"
+# include "asio/detail/impl/descriptor_serial_port_service.ipp"
 #endif // defined(ASIO_HEADER_ONLY)
 
 #endif // !defined(ASIO_WINDOWS) && !defined(__CYGWIN__)
 #endif // defined(ASIO_HAS_SERIAL_PORT)
 
-#endif // ASIO_DETAIL_REACTIVE_SERIAL_PORT_SERVICE_HPP
+#endif // ASIO_DETAIL_DESCRIPTOR_SERIAL_PORT_SERVICE_HPP
