@@ -1053,7 +1053,7 @@
 # include <unistd.h>
 #endif // defined(ASIO_HAS_UNISTD_H)
 
-// Linux: epoll, eventfd and timerfd.
+// Linux: io_uring, epoll, eventfd and timerfd.
 #if defined(__linux__)
 # include <linux/version.h>
 # if !defined(ASIO_HAS_EPOLL)
@@ -1077,6 +1077,17 @@
 #   endif // (__GLIBC__ > 2) || (__GLIBC__ == 2 && __GLIBC_MINOR__ >= 8)
 #  endif // defined(ASIO_HAS_EPOLL)
 # endif // !defined(ASIO_HAS_TIMERFD)
+# if !defined(ASIO_HAS_IO_URING)
+#  if defined(ASIO_ENABLE_IO_URING)
+#   if !defined(ASIO_HAS_TIMERFD)
+#    error "Can't use io_uring without timerfd"
+#   endif // !defined(ASIO_HAS_TIMERFD)
+#   if LINUX_VERSION_CODE < KERNEL_VERSION(5,3,0)
+#    error "Your kernel version doesn't support io_uring"
+#   endif // LINUX_VERSION_CODE < KERNEL_VERSION(5,3,0)
+#   define ASIO_HAS_IO_URING 1
+#  endif // defined(ASIO_ENABLE_IO_URING)
+# endif // !defined(ASIO_HAS_IO_URING)
 #endif // defined(__linux__)
 
 // Mac OS X, FreeBSD, NetBSD, OpenBSD: kqueue.

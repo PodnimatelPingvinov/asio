@@ -65,6 +65,37 @@ fi
 
 AM_CONDITIONAL(HAVE_OPENSSL,test x$OPENSSL_FOUND != xno)
 
+AC_ARG_WITH(liburing,
+  AC_HELP_STRING([--with-liburing=DIR],[location of liburing]),
+[
+  CPPFLAGS="$CPPFLAGS -I${withval}/include"
+  LIBS="$LIBS -L${withval}/lib"
+],[])
+
+AC_ARG_ENABLE(io-uring,
+[  --enable-io-uring  use io_uring as backend],
+[
+  USE_IO_URING=yes
+])
+
+if test "$USE_IO_URING" == yes; then
+  AC_CHECK_HEADER([liburing.h],,
+  [
+    echo "Can't find liburing headers. Please check the location of the library"
+    echo "and rerun configure using the --with-liburing=DIR option."
+    echo "Alternatively, run without --enable-io-uring to use another backend."
+    exit 1
+  ],[])
+  AC_CHECK_LIB([uring],[io_uring_queue_init],,
+  [
+    echo "Can't find liburing library. Please check the location of the library"
+    echo "and rerun configure using the --with-liburing=DIR option."
+    echo "Alternatively, run without --enable-io-uring to use another backend."
+    exit 1
+  ],[])
+  CPPFLAGS="$CPPFLAGS -DASIO_ENABLE_IO_URING"
+fi
+
 WINDOWS=no
 case $host in
   *-*-linux*)
