@@ -655,6 +655,7 @@ void test()
 
   // Cancelled read.
 
+#if !defined(ASIO_HAS_IO_URING)
   bool read_cancel_completed = false;
   asio::async_read(server_side_socket,
       asio::buffer(read_buffer),
@@ -670,6 +671,7 @@ void test()
   ioc.restart();
   ioc.run();
   ASIO_CHECK(read_cancel_completed);
+#endif
 
   // A read when the peer closes socket should fail with eof.
 
