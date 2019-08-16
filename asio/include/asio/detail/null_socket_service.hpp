@@ -405,7 +405,7 @@ public:
   template <typename ConstBufferSequence, typename Handler, typename IoExecutor>
   void async_send_to(implementation_type&, const ConstBufferSequence&,
       const endpoint_type&, socket_base::message_flags,
-      Handler& handler)
+      Handler& handler, const IoExecutor& io_ex)
   {
     asio::error_code ec = asio::error::operation_not_supported;
     const std::size_t bytes_transferred = 0;
